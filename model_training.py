@@ -1,155 +1,186 @@
-# ==========================================
-# IMDb Sentiment Analysis using RNN (PyTorch)
-# ==========================================
-
 import os
+import joblib
 import torch
 import torch.nn as nn
-import torch.optim as optim
-import numpy as np
+import pandas as pd
 
-from torch.utils.data import DataLoader, TensorDataset
-from tensorflow.keras.datasets import imdb
-from tensorflow.keras.preprocessing.sequence import pad_sequences
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from sklearn.feature_extraction.text import CountVectorizer
 
-# ==========================================
+from torch.utils.data import TensorDataset, DataLoader
+
+# ==================================================
 # Create Models Folder
-# ==========================================
+# ==================================================
 
 os.makedirs("models", exist_ok=True)
 
-# ==========================================
+# ==================================================
 # Load Dataset
-# ==========================================
+# ==================================================
 
-vocab_size = 10000
-max_len = 200
+df = pd.read_csv("dataset/IMDB Dataset.csv")
 
-(X_train, y_train), (X_test, y_test) = imdb.load_data(
-    num_words=vocab_size
+# ==================================================
+# Encode Labels
+# ==================================================
+
+label_encoder = LabelEncoder()
+
+df["sentiment"] = label_encoder.fit_transform(
+    df["sentiment"]
 )
 
-X_train = pad_sequences(X_train, maxlen=max_len)
-X_test = pad_sequences(X_test, maxlen=max_len)
+# ==================================================
+# Text Vectorization
+# ==================================================
 
-# ==========================================
-# Convert to Tensors
-# ==========================================
+vectorizer = CountVectorizer(
+    max_features=5000,
+    stop_words='english'
+)
 
-X_train = torch.tensor(X_train, dtype=torch.long)
-y_train = torch.tensor(y_train, dtype=torch.float32)
+X = vectorizer.fit_transform(
+    df["review"]
+).toarray()
 
-X_test = torch.tensor(X_test, dtype=torch.long)
-y_test = torch.tensor(y_test, dtype=torch.float32)
+y = df["sentiment"].values
 
-# ==========================================
+# ==================================================
+# Save Tokenizer & Encoder
+# ==================================================
+
+joblib.dump(
+    vectorizer,
+    "models/tokenizer.pkl"
+)
+
+joblib.dump(
+    label_encoder,
+    "models/label_encoder.pkl"
+)
+
+# ==================================================
+# Train Test Split
+# ==================================================
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X,
+    y,
+    test_size=0.2,
+    random_state=42
+)
+
+# ==================================================
+# Convert to Tensor
+# ==================================================
+
+X_train = torch.tensor(
+    X_train,
+    dtype=torch.float32
+)
+
+y_train = torch.tensor(
+    y_train,
+    dtype=torch.float32
+)
+
+# ==================================================
 # DataLoader
-# ==========================================
+# ==================================================
 
-train_dataset = TensorDataset(X_train, y_train)
+dataset = TensorDataset(
+    X_train,
+    y_train
+)
 
-train_loader = DataLoader(
-    train_dataset,
+loader = DataLoader(
+    dataset,
     batch_size=64,
     shuffle=True
 )
 
-# ==========================================
+# ==================================================
 # RNN Model
-# ==========================================
+# ==================================================
 
 class RNNModel(nn.Module):
 
     def __init__(self):
 
-        super(RNNModel, self).__init__()
-
-        self.embedding = nn.Embedding(
-            vocab_size,
-            32
-        )
+        super().__init__()
 
         self.rnn = nn.RNN(
-            32,
-            32,
+            input_size=5000,
+            hidden_size=128,
             batch_first=True
         )
 
-        self.fc1 = nn.Linear(32, 16)
-
-        self.relu = nn.ReLU()
-
-        self.fc2 = nn.Linear(16, 1)
+        self.fc = nn.Linear(
+            128,
+            1
+        )
 
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
 
-        x = self.embedding(x)
+        x = x.unsqueeze(1)
 
         output, hidden = self.rnn(x)
 
-        hidden = hidden.squeeze(0)
+        out = self.fc(
+            hidden.squeeze(0)
+        )
 
-        x = self.fc1(hidden)
+        return self.sigmoid(out)
 
-        x = self.relu(x)
-
-        x = self.fc2(x)
-
-        x = self.sigmoid(x)
-
-        return x
-
-# ==========================================
-# Initialize Model
-# ==========================================
+# ==================================================
+# Train Model
+# ==================================================
 
 model = RNNModel()
 
 criterion = nn.BCELoss()
 
-optimizer = optim.Adam(
+optimizer = torch.optim.Adam(
     model.parameters(),
     lr=0.001
 )
 
-# ==========================================
-# Training
-# ==========================================
-
-epochs = 3
+epochs = 5
 
 for epoch in range(epochs):
 
-    model.train()
-
-    total_loss = 0
-
-    for inputs, labels in train_loader:
+    for X_batch, y_batch in loader:
 
         optimizer.zero_grad()
 
-        outputs = model(inputs).squeeze()
+        outputs = model(
+            X_batch
+        ).squeeze()
 
-        loss = criterion(outputs, labels)
+        loss = criterion(
+            outputs,
+            y_batch
+        )
 
         loss.backward()
 
         optimizer.step()
 
-        total_loss += loss.item()
+    print(
+        f"Epoch {epoch+1}/{epochs} Loss:{loss.item():.4f}"
+    )
 
-    print(f"Epoch {epoch+1}, Loss: {total_loss:.4f}")
-
-# ==========================================
+# ==================================================
 # Save Model
-# ==========================================
+# ==================================================
 
 torch.save(
     model.state_dict(),
     "models/imdb_rnn_model.pth"
 )
 
-print("Model Saved Successfully!")
-
+print("Model Saved Successfully")

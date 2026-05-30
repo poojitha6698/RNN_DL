@@ -1,147 +1,181 @@
 import streamlit as st
 import torch
 import torch.nn as nn
+import joblib
 
-from tensorflow.keras.datasets import imdb
-from tensorflow.keras.preprocessing.sequence import pad_sequences
+# ==================================================
+# Page Config
+# ==================================================
 
-# ==========================================
-# Config
-# ==========================================
+st.set_page_config(
+    page_title="IMDb Sentiment Analyzer",
+    page_icon="🎬",
+    layout="wide"
+)
 
-vocab_size = 10000
-max_len = 200
+# ==================================================
+# Custom CSS
+# ==================================================
 
-# ==========================================
-# Word Index
-# ==========================================
+st.markdown("""
+<style>
 
-word_index = imdb.get_word_index()
-
-word_to_id = {
-    k: (v + 3)
-    for k, v in word_index.items()
+.main{
+background:#f5f7fa;
 }
 
-word_to_id["<PAD>"] = 0
-word_to_id["<START>"] = 1
-word_to_id["<UNK>"] = 2
+.title{
+font-size:42px;
+font-weight:bold;
+text-align:center;
+color:white;
+padding:20px;
+border-radius:15px;
+background:linear-gradient(
+90deg,
+#4facfe,
+#00f2fe
+);
+}
 
-# ==========================================
-# Encode Function
-# ==========================================
+.card{
+background:white;
+padding:20px;
+border-radius:15px;
+box-shadow:0px 3px 12px rgba(0,0,0,0.2);
+}
 
-def encode_review(text):
+.big{
+font-size:28px;
+font-weight:bold;
+}
 
-    words = text.lower().split()
+</style>
+""",
+unsafe_allow_html=True)
 
-    encoded = []
+# ==================================================
+# Title
+# ==================================================
 
-    for word in words:
+st.markdown(
+"""
+<div class="title">
+🎬 IMDb Movie Review Sentiment Analysis
+</div>
+""",
+unsafe_allow_html=True
+)
 
-        if word in word_to_id:
-            encoded.append(word_to_id[word])
-        else:
-            encoded.append(2)
+st.write("")
 
-    return encoded
+# ==================================================
+# Load Tokenizer
+# ==================================================
 
-# ==========================================
-# RNN Model
-# ==========================================
+vectorizer = joblib.load(
+    "models/tokenizer.pkl"
+)
+
+label_encoder = joblib.load(
+    "models/label_encoder.pkl"
+)
+
+# ==================================================
+# Model
+# ==================================================
 
 class RNNModel(nn.Module):
 
     def __init__(self):
 
-        super(RNNModel, self).__init__()
-
-        self.embedding = nn.Embedding(
-            vocab_size,
-            32
-        )
+        super().__init__()
 
         self.rnn = nn.RNN(
-            32,
-            32,
+            input_size=5000,
+            hidden_size=128,
             batch_first=True
         )
 
-        self.fc1 = nn.Linear(32, 16)
-
-        self.relu = nn.ReLU()
-
-        self.fc2 = nn.Linear(16, 1)
+        self.fc = nn.Linear(
+            128,
+            1
+        )
 
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
 
-        x = self.embedding(x)
+        x = x.unsqueeze(1)
 
         output, hidden = self.rnn(x)
 
-        hidden = hidden.squeeze(0)
+        out = self.fc(
+            hidden.squeeze(0)
+        )
 
-        x = self.fc1(hidden)
-
-        x = self.relu(x)
-
-        x = self.fc2(x)
-
-        x = self.sigmoid(x)
-
-        return x
-
-# ==========================================
-# Load Model
-# ==========================================
+        return self.sigmoid(out)
 
 model = RNNModel()
 
 model.load_state_dict(
     torch.load(
         "models/imdb_rnn_model.pth",
-        map_location=torch.device('cpu')
+        map_location="cpu"
     )
 )
 
 model.eval()
 
-# ==========================================
-# Streamlit UI
-# ==========================================
-
-st.title("IMDb Sentiment Analysis using RNN")
+# ==================================================
+# User Input
+# ==================================================
 
 review = st.text_area(
-    "Enter Movie Review"
+    "Enter Movie Review",
+    height=200
 )
 
-if st.button("Predict"):
+# ==================================================
+# Prediction
+# ==================================================
 
-    encoded_review = encode_review(review)
+if st.button(
+    "🔍 Analyze Sentiment",
+    use_container_width=True
+):
 
-    padded_review = pad_sequences(
-        [encoded_review],
-        maxlen=max_len
-    )
+    vector = vectorizer.transform(
+        [review]
+    ).toarray()
 
-    input_tensor = torch.tensor(
-        padded_review,
-        dtype=torch.long
+    tensor = torch.tensor(
+        vector,
+        dtype=torch.float32
     )
 
     with torch.no_grad():
 
-        prediction = model(input_tensor)
+        prediction = model(
+            tensor
+        )
 
         score = prediction.item()
 
-    st.write(f"Sentiment Score: {score:.4f}")
+    st.write("---")
 
     if score >= 0.5:
-        st.success("Positive Review")
-    else:
-        st.error("Negative Review")
 
+        st.success(
+            f"😊 Positive Review ({score:.2%})"
+        )
+
+        st.balloons()
+
+    else:
+
+        st.error(
+            f"😔 Negative Review ({(1-score):.2%})"
+        )
+
+    st.progress(score)
