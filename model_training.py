@@ -55,21 +55,21 @@ model = Sequential()
 model.add(
     Embedding(
         input_dim=vocab_size,
-        output_dim=128,
+        output_dim=32,
         input_length=max_len
     )
 )
 
 model.add(
     SimpleRNN(
-        128,
+        32,
         activation='tanh'
     )
 )
 
 model.add(
     Dense(
-        64,
+        16,
         activation='relu'
     )
 )
@@ -132,7 +132,7 @@ print(f"\nTest Accuracy: {accuracy:.4f}")
 # Save Model
 # ==========================================
 
-model.save("models/imdb_rnn_model.h5")
+model.save("models/imdb_rnn_model.keras")
 
 print("\nModel Saved Successfully!")
 

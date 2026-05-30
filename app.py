@@ -1,7 +1,8 @@
 # ==========================================
 # IMDb Sentiment Analysis App using RNN
 # ==========================================
-
+import os
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 import streamlit as st
 import numpy as np
 import tensorflow as tf
@@ -14,7 +15,7 @@ from tensorflow.keras.models import load_model
 # Load Model
 # ==========================================
 
-model = load_model("models/imdb_rnn_model.h5")
+model = load_model("models/imdb_rnn_model.keras")
 
 # ==========================================
 # IMDb Word Index
