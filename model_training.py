@@ -1,19 +1,16 @@
 # ==========================================
-# IMDb Sentiment Analysis using RNN
-# Model Training File
+# IMDb Sentiment Analysis using RNN (PyTorch)
 # ==========================================
 
 import os
-import pickle
+import torch
+import torch.nn as nn
+import torch.optim as optim
 import numpy as np
-import tensorflow as tf
-import matplotlib.pyplot as plt
 
+from torch.utils.data import DataLoader, TensorDataset
 from tensorflow.keras.datasets import imdb
 from tensorflow.keras.preprocessing.sequence import pad_sequences
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Embedding, SimpleRNN, Dense
-from tensorflow.keras.callbacks import EarlyStopping
 
 # ==========================================
 # Create Models Folder
@@ -22,7 +19,7 @@ from tensorflow.keras.callbacks import EarlyStopping
 os.makedirs("models", exist_ok=True)
 
 # ==========================================
-# Load IMDb Dataset
+# Load Dataset
 # ==========================================
 
 vocab_size = 10000
@@ -32,143 +29,127 @@ max_len = 200
     num_words=vocab_size
 )
 
-# ==========================================
-# Padding Sequences
-# ==========================================
-
-X_train = pad_sequences(
-    X_train,
-    maxlen=max_len
-)
-
-X_test = pad_sequences(
-    X_test,
-    maxlen=max_len
-)
+X_train = pad_sequences(X_train, maxlen=max_len)
+X_test = pad_sequences(X_test, maxlen=max_len)
 
 # ==========================================
-# Build RNN Model
+# Convert to Tensors
 # ==========================================
 
-model = Sequential()
+X_train = torch.tensor(X_train, dtype=torch.long)
+y_train = torch.tensor(y_train, dtype=torch.float32)
 
-model.add(
-    Embedding(
-        input_dim=vocab_size,
-        output_dim=32,
-        input_length=max_len
-    )
-)
-
-model.add(
-    SimpleRNN(
-        32,
-        activation='tanh'
-    )
-)
-
-model.add(
-    Dense(
-        16,
-        activation='relu'
-    )
-)
-
-model.add(
-    Dense(
-        1,
-        activation='sigmoid'
-    )
-)
+X_test = torch.tensor(X_test, dtype=torch.long)
+y_test = torch.tensor(y_test, dtype=torch.float32)
 
 # ==========================================
-# Compile Model
+# DataLoader
 # ==========================================
 
-model.compile(
-    optimizer='adam',
-    loss='binary_crossentropy',
-    metrics=['accuracy']
-)
+train_dataset = TensorDataset(X_train, y_train)
 
-# ==========================================
-# Model Summary
-# ==========================================
-
-model.summary()
-
-# ==========================================
-# Early Stopping
-# ==========================================
-
-early_stop = EarlyStopping(
-    monitor='val_loss',
-    patience=2,
-    restore_best_weights=True
-)
-
-# ==========================================
-# Train Model
-# ==========================================
-
-history = model.fit(
-    X_train,
-    y_train,
-    epochs=5,
+train_loader = DataLoader(
+    train_dataset,
     batch_size=64,
-    validation_split=0.2,
-    callbacks=[early_stop]
+    shuffle=True
 )
 
 # ==========================================
-# Evaluate Model
+# RNN Model
 # ==========================================
 
-loss, accuracy = model.evaluate(X_test, y_test)
+class RNNModel(nn.Module):
 
-print(f"\nTest Accuracy: {accuracy:.4f}")
+    def __init__(self):
+
+        super(RNNModel, self).__init__()
+
+        self.embedding = nn.Embedding(
+            vocab_size,
+            32
+        )
+
+        self.rnn = nn.RNN(
+            32,
+            32,
+            batch_first=True
+        )
+
+        self.fc1 = nn.Linear(32, 16)
+
+        self.relu = nn.ReLU()
+
+        self.fc2 = nn.Linear(16, 1)
+
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+
+        x = self.embedding(x)
+
+        output, hidden = self.rnn(x)
+
+        hidden = hidden.squeeze(0)
+
+        x = self.fc1(hidden)
+
+        x = self.relu(x)
+
+        x = self.fc2(x)
+
+        x = self.sigmoid(x)
+
+        return x
+
+# ==========================================
+# Initialize Model
+# ==========================================
+
+model = RNNModel()
+
+criterion = nn.BCELoss()
+
+optimizer = optim.Adam(
+    model.parameters(),
+    lr=0.001
+)
+
+# ==========================================
+# Training
+# ==========================================
+
+epochs = 3
+
+for epoch in range(epochs):
+
+    model.train()
+
+    total_loss = 0
+
+    for inputs, labels in train_loader:
+
+        optimizer.zero_grad()
+
+        outputs = model(inputs).squeeze()
+
+        loss = criterion(outputs, labels)
+
+        loss.backward()
+
+        optimizer.step()
+
+        total_loss += loss.item()
+
+    print(f"Epoch {epoch+1}, Loss: {total_loss:.4f}")
 
 # ==========================================
 # Save Model
 # ==========================================
 
-model.save("models/imdb_rnn_model.keras")
-
-print("\nModel Saved Successfully!")
-
-# ==========================================
-# Save Training History
-# ==========================================
-
-with open("models/training_history.pkl", "wb") as file:
-    pickle.dump(history.history, file)
-
-print("Training History Saved!")
-
-# ==========================================
-# Accuracy Graph
-# ==========================================
-
-plt.figure(figsize=(8, 5))
-
-plt.plot(
-    history.history['accuracy'],
-    label='Training Accuracy'
+torch.save(
+    model.state_dict(),
+    "models/imdb_rnn_model.pth"
 )
 
-plt.plot(
-    history.history['val_accuracy'],
-    label='Validation Accuracy'
-)
+print("Model Saved Successfully!")
 
-plt.xlabel("Epochs")
-plt.ylabel("Accuracy")
-plt.title("Training vs Validation Accuracy")
-
-plt.legend()
-
-plt.savefig("models/accuracy_graph.png")
-
-plt.show()
-
-print("Accuracy Graph Saved!")
